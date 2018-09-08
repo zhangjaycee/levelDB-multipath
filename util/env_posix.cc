@@ -38,6 +38,15 @@ namespace leveldb {
 
 namespace {
 
+//zjc 20180507
+static FILE *log_fp = fopen("/tmp/jcleveldb.log", "a+");
+static char time_buf[30];
+static time_t rawtime;
+static struct tm * timeinfo;
+static int count_newfile = 0;
+static int count_rndfile = 0;
+static int count_rm_file = 0;
+
 static int open_read_only_file_limit = -1;
 static int mmap_limit = -1;
 
@@ -394,6 +403,13 @@ class PosixEnv : public Env {
 
   virtual Status NewSequentialFile(const std::string& fname,
                                    SequentialFile** result) {
+
+    //zjc 20180507
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    fprintf(log_fp, "[jc_log %s] SEQ access [%s] file number\n", time_buf, fname.c_str());
+
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
       *result = nullptr;
@@ -406,6 +422,14 @@ class PosixEnv : public Env {
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result) {
+
+    //zjc 20180507
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    count_rndfile++;
+    fprintf(log_fp, "[jc_log %s] RANDOM access [%s] file number %d\n", time_buf, fname.c_str(),  count_rndfile);
+
     *result = nullptr;
     Status s;
     int fd = open(fname.c_str(), O_RDONLY);
@@ -435,7 +459,53 @@ class PosixEnv : public Env {
   virtual Status NewWritableFile(const std::string& fname,
                                  WritableFile** result) {
     Status s;
-    int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+
+    //zjc 20180507
+    //int fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+    int fd;
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    count_newfile++;
+    std::string ldb_fmt = "ldb";
+    std::string name_fmt = fname.substr(fname.size() - 3);
+    if (!(name_fmt == ldb_fmt)) { // if not ldb file, store it in the main directory
+        fd = open(fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+        fprintf(log_fp, "[jc_log %s] new file [%s] number %d\n", time_buf, fname.c_str(),  count_newfile);
+        //Log(options_.info_log, "[jc_log] new file [%s] number %d\n", fname.c_str(), count_newfile); //zjc 20180511
+    } else { //.ldb file, redirect by symbolic links !
+        int split_level = fname.find("START");
+        int split_level2 = fname.find("END");
+        std::string level_str = fname.substr(split_level + 5, split_level2);
+        int level_num = atoi(level_str.c_str());
+        std::string fname_tmp = fname.substr(0, split_level) + fname.substr(split_level2 + 3, fname.size());
+
+        int len = fname_tmp.size();
+        int split_index = len - 1;
+        while (split_index >= 0) {
+            if (fname_tmp[split_index] == '/')
+                break;
+            else
+                split_index--;
+        }
+        std::string disk_path;
+        if (level_num >= 2) { // the level_num is the original level?
+            //printf("HDD!!!\n");
+            disk_path = "/HDD";
+        } else {
+            disk_path = "/OPTANE";
+        }
+        //std::string actual_fname = fname_tmp.substr(0, split_index) + "/OPTANE" + fname_tmp.substr(split_index);
+        std::string actual_fname = fname_tmp.substr(0, split_index) + disk_path + fname_tmp.substr(split_index);
+        int tmp_fd = open(actual_fname.c_str(), O_TRUNC | O_WRONLY | O_CREAT, 0644);
+        close(tmp_fd);
+        symlinkat(actual_fname.c_str(), AT_FDCWD, fname_tmp.c_str());
+        fd = open(fname_tmp.c_str(), O_WRONLY, 0644);
+        fprintf(log_fp, "[jc_log %s] new file (fname=%s)[%s]-->[%s] (level-%d) number %d\n", time_buf, fname.c_str(), fname_tmp.c_str(), actual_fname.c_str(), level_num, count_newfile);
+        //Log(options_.info_log, "[jc_log] new file (fname=%s)[%s]-->[%s] (level-%d) number %d\n", time_buf, fname.c_str(), fname_tmp.c_str(), actual_fname.c_str(), level_num, count_newfile); // zjc 20180511
+    }
+    //zjc
+
     if (fd < 0) {
       *result = nullptr;
       s = PosixError(fname, errno);
@@ -479,9 +549,35 @@ class PosixEnv : public Env {
 
   virtual Status DeleteFile(const std::string& fname) {
     Status result;
-    if (unlink(fname.c_str()) != 0) {
-      result = PosixError(fname, errno);
+
+    //zjc 20180507
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    count_rm_file++;
+    std::string ldb_fmt = "ldb";
+    std::string name_fmt = fname.substr(fname.size() - 3);
+    if (!(name_fmt == ldb_fmt)) { // if not ldb file, just delete it from the main directory
+        fprintf(log_fp, "[jc_log %s] remove [%s] file number %d\n", time_buf, fname.c_str(),  count_rm_file);
+        if (unlink(fname.c_str()) != 0) {
+          result = PosixError(fname, errno);
+        }
+    } else { //.ldb file, redirect by symbolic links !
+        char real_name[256];
+        realpath(fname.c_str(), real_name);
+        fprintf(log_fp, "[jc_log %s] remove [%s] --> [%s] file number %d\n", time_buf, fname.c_str(), real_name, count_rm_file);
+        if (unlink(real_name) != 0) {
+          result = PosixError(fname, errno);
+        }
+        if (unlink(fname.c_str()) != 0) {
+          result = PosixError(fname, errno);
+        }
     }
+    //if (unlink(fname.c_str()) != 0) {
+    //  result = PosixError(fname, errno);
+    //}
+    //zjc
+
     return result;
   }
 
@@ -494,6 +590,12 @@ class PosixEnv : public Env {
   }
 
   virtual Status DeleteDir(const std::string& name) {
+    //zjc 20180507
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    fprintf(log_fp, "[jc_log %s] remove DIR!!!!!! (%s)\n", time_buf, name.c_str());
+
     Status result;
     if (rmdir(name.c_str()) != 0) {
       result = PosixError(name, errno);
@@ -514,6 +616,11 @@ class PosixEnv : public Env {
   }
 
   virtual Status RenameFile(const std::string& src, const std::string& target) {
+    //zjc 20180507
+    time ( &rawtime );
+    timeinfo = localtime ( &rawtime );
+    strftime(time_buf, 30, "%x %X", timeinfo);
+    fprintf(log_fp, "[jc_log %s] RENAME FILE!!!!!! %s -> %s\n", time_buf, src.c_str(), target.c_str());
     Status result;
     if (rename(src.c_str(), target.c_str()) != 0) {
       result = PosixError(src, errno);

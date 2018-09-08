@@ -11,6 +11,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <sys/time.h>
 
 #include "db/builder.h"
 #include "db/db_iter.h"
@@ -35,7 +36,16 @@
 #include "util/logging.h"
 #include "util/mutexlock.h"
 
+#define JC_DEBUG
 namespace leveldb {
+#ifdef JC_DEBUG
+//zjc 20180507
+static FILE *log_fp = fopen("/tmp/jc_create.log", "a+");
+static char time_buf[30];
+static time_t rawtime;
+static struct tm * timeinfo;
+#endif
+
 
 const int kNumNonTableCacheFiles = 10;
 
@@ -809,7 +819,30 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
 
   // Make the output file
   std::string fname = TableFileName(dbname_, file_number);
-  Status s = env_->NewWritableFile(fname, &compact->outfile);
+
+  //zjc 20180507
+#ifdef JC_DEBUG
+  time ( &rawtime );
+  timeinfo = localtime ( &rawtime );
+  strftime(time_buf, 30, "%x %X", timeinfo);
+#endif
+  Status s;
+  std::string ldb_fmt = "ldb";
+  std::string name_fmt = fname.substr(fname.size() - 3);
+  if (!(name_fmt == ldb_fmt)) {
+#ifdef JC_DEBUG
+      fprintf(log_fp, "[jc_log %s] Compaction Create: %s\n", time_buf, fname.c_str());
+#endif
+      s = env_->NewWritableFile(fname, &compact->outfile);
+  } else {
+#ifdef JC_DEBUG
+      fprintf(log_fp, "[jc_log %s] Compaction Create: %s level-[%d]\n", time_buf, fname.c_str(), compact->compaction->level());
+#endif
+      std::string level_str = std::to_string(compact->compaction->level());
+      std::string fname_used_to_create = fname.substr(0,fname.size()-4) + "START" + level_str + "END.ldb";
+      s = env_->NewWritableFile(fname_used_to_create, &compact->outfile);
+  }
+
   if (s.ok()) {
     compact->builder = new TableBuilder(options_, compact->outfile);
   }
