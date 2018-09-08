@@ -1,10 +1,10 @@
-Jc's multipath prototype of levelDB
+## Jc's multipath prototype of levelDB
 
 levelDB默认只支持但目录存储，通过结合软链接和目录挂载的方法，levelDB代码只需要简单的修改，就可以实现多路径。
 
-具体实现参考我的博客： http://blog.jcix.top/2018-05-11/leveldb\_paths/
+具体实现参考我的博客： http://blog.jcix.top/2018-05-11/leveldb_paths/
 
-
+修改自leveldb(https://github.com/google/leveldb), 以下为原readme：
 ---
 **LevelDB is a fast key-value storage library written at Google that provides an ordered mapping from string keys to string values.**
 
