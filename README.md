@@ -4,8 +4,33 @@ levelDB默认只支持但目录存储，通过结合软链接和目录挂载的�
 
 具体实现参考我的博客： http://blog.jcix.top/2018-05-11/leveldb_paths/
 
-修改自leveldb(https://github.com/google/leveldb), 以下为原readme：
+* 以下为一些测试数据，存储介质为磁盘和Optane SSD，测试工具为db_bench进行了测试：
+  - 测试参数：5GB数据(每个key 10字节，每个value 10 KB)，无压缩。
+  - 应该有大于3GB数据最后落到HDD上(level 3)
+  - 单位是时间(us)
+
+
+|             | Optane+HDD  | Optane     | HDD         |
+| ----------- | ----------- | ---------- | ----------- |
+| fillseq     | 39.071      | 39.327     | 186.268     |
+| fillsync    | 259.771     | 257.922    | 39769.313   |
+| fillrandom  | 530.083     | 382.001    | 1283.987    |
+| overwrite   | 706.877     | 460.186    | 1553.648    |
+| readrandom  | 50.558      | 40.524     | 61.359      |
+| readrandom  | 27.544      | 19.669     | 32.5        |
+| readseq     | 7.122       | 6.333      | 7.355       |
+| readreverse | 7.158       | 6.522      | 7.376       |
+| compact     | 126,058,994 | 40,364,334 | 142,963,590 |
+| readrandom  | 14.987      | 12.409     | 13.556      |
+| readseq     | 5.996       | 5.931      | 6.228       |
+| readreverse | 6.282       | 6.272      | 6.09        |
+| fill100K    | 1101.639    | 1089.501   | 4241.822    |
+
 ---
+
+修改自leveldb(https://github.com/google/leveldb), 以下为原readme：
+
+
 **LevelDB is a fast key-value storage library written at Google that provides an ordered mapping from string keys to string values.**
 
 [![Build Status](https://travis-ci.org/google/leveldb.svg?branch=master)](https://travis-ci.org/google/leveldb)
