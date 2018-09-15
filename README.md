@@ -1,6 +1,6 @@
 ## Jc's multipath prototype of levelDB
 
-levelDB默认只支持但目录存储，通过结合软链接和目录挂载的方法，levelDB代码只需要简单的修改，就可以实现多路径。
+levelDB默认只支持单目录存储，通过结合软链接和目录挂载的方法，levelDB代码只需要简单的修改，就可以实现多路径。
 
 具体实现参考我的博客： http://blog.jcix.top/2018-05-11/leveldb_paths/
 
